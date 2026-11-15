@@ -1,0 +1,9 @@
+# Fichiers de contexte privés : ne jamais publier (dépôt GitHub public)
+CLAUDE.md
+AGENTS.md
+# Sauvegardes exportées depuis la page
+mon-rythme-*.json
+# Dépendances et résultats de tests locaux
+node_modules/
+test-results/
+playwright-report/
