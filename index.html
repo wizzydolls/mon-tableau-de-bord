@@ -1210,7 +1210,7 @@ dialog h2 {
 <div class="layout"><div class="stack">
 <section class="card hero" aria-labelledby="nowHeading"><div class="flex between"><div class="eyebrow" id="nowHeading">01 / Maintenant</div><span class="time" id="clock"></span></div><div id="now"></div></section>
 <section class="card" id="checklistCard" aria-labelledby="checklistHeading"><div class="eyebrow">02 / À cocher</div><div id="checklist"></div></section>
-<section class="card" aria-labelledby="trackerHeading"><div class="flex between"><div><div class="eyebrow">03 / Le tableau</div><h2 id="trackerHeading">Ma semaine en %</h2></div><span id="trackerWeekPct" class="pct" style="padding:6px 10px;font-size:12px"></span></div><div class="tracker-nav"><button data-action="trackerPrev" aria-label="Semaine précédente">←</button><strong id="trackerRange" style="font-size:13px"></strong><button data-action="trackerNext" aria-label="Semaine suivante">→</button><button class="quiet" data-action="trackerToday">Cette semaine</button></div><div class="tracker-wrap"><div id="tracker"></div></div><p class="hint">1 appui : fait (1 point) · 2 appuis : version minimum (½) · 3 appuis : effacer. La ligne du bas donne ton % de chaque jour ; la colonne % compte les jours déjà passés.</p></section>
+<section class="card" aria-labelledby="trackerHeading"><div class="flex between"><div><div class="eyebrow">03 / Le tableau</div><h2 id="trackerHeading">Ma semaine en %</h2></div><span id="trackerWeekPct" class="pct" style="padding:6px 10px;font-size:12px"></span></div><div class="tracker-nav"><button data-action="trackerPrev" aria-label="Semaine précédente">←</button><strong id="trackerRange" style="font-size:13px"></strong><button data-action="trackerNext" aria-label="Semaine suivante">→</button><button class="quiet" data-action="trackerToday">Cette semaine</button></div><div class="tracker-wrap"><div id="tracker"></div></div><p class="hint">Un appui valide l’action. Les changements de niveau conservent le meilleur score. Pour diminuer ou effacer une validation, utilise « Effacer » dans Ma journée. La ligne du bas donne ton % de chaque jour ; la colonne % compte les jours déjà passés.</p></section>
 <section class="card" aria-labelledby="dayHeading"><div class="flex between section-head"><div><div class="eyebrow">04 / Le fil de la journée</div><h2 id="dayHeading">Ma journée</h2></div><div id="dailyScore"></div></div><div id="dailyBar"></div><div class="history"><button data-action="prevDate" aria-label="Jour précédent">←</button><label class="screenreader" for="dayDate">Jour à consulter</label><input type="date" id="dayDate"><button data-action="nextDate" aria-label="Jour suivant">→</button><button data-action="today" class="quiet">Aujourd’hui</button><button data-action="hideMarkers" class="quiet" id="hideMarkersBtn" aria-pressed="false">Masquer les repères</button></div><p class="hint" id="historyHint"></p><div class="timeline" id="timeline"></div></section>
 </div><aside class="stack">
 <section class="card" aria-labelledby="progressHeading"><div class="eyebrow">05 / La régularité compte</div><div class="flex between" style="margin-top:5px"><h2 id="progressHeading">Cette semaine</h2><button class="quiet" data-action="settings" aria-label="Modifier mes objectifs">Réglages</button></div><p class="hint" id="weekRange"></p><div id="weekly"></div></section>
@@ -2150,14 +2150,14 @@ function setScore(id, date, value, starter = false) {
     const next = { p: value, late: lateAt(date, b, r.blocks), at: new Date().toISOString() };
     if (!state.settings.latePenalty) next.penaltyExempt = true;
     // Recliquer le niveau déjà validé ne change rien (sinon un clic tardif écraserait une validation à l’heure).
-    // Passer au niveau supérieur garde le meilleur des deux (ex. Minimum à l’heure = Standard en retard) ; le démarreur ne rétrograde jamais un Standard.
+    // Tout changement de niveau garde le meilleur score ; le démarreur ne rétrograde jamais un Standard.
     const same = prev && typeof prev === 'object' && prev.p === value;
     const keep =
       prev &&
       typeof prev === 'object' &&
-      (same || (starter && prev.p === 1) || (value === 1 && prev.p === 0.5 && pointsOf(next) <= pointsOf(prev)));
+      (same || (starter && prev.p === 1) || pointsOf(next) <= pointsOf(prev));
     if (same) msg = 'Déjà validé : rien ne change. Pour recommencer, effacez d’abord.';
-    else if (keep) msg = starter ? 'Déjà en Standard : on le garde.' : 'Ton Minimum à l’heure vaut autant : on le garde.';
+    else if (keep) msg = starter ? 'Déjà en Standard : on le garde.' : 'On garde ton meilleur score. Pour corriger, efface d’abord la validation.';
     else {
       r.values[id] = next;
       if (isLate(next)) msg = 'Fait quand même : 50 % gardés. Demain, à l’heure !';

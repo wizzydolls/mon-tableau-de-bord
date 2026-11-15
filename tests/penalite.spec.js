@@ -213,6 +213,27 @@ test.describe('Pénalité de retard', () => {
     await expect(todo(page, 'Salle — Poussée A')).toHaveClass(/late/);
   });
 
+  test('passer de Standard à Minimum conserve le meilleur score et la validation originale', async ({ page }) => {
+    await open(page, at(MONDAY, '20:30'));
+    await todo(page, 'Salle — Poussée A').locator('.checkbox').click();
+    const original = (await stored(page)).records[MONDAY].values;
+    await page.clock.setFixedTime(at(MONDAY, '22:00'));
+    await page.reload();
+    await todo(page, 'Salle — Poussée A').locator('.minbtn').click();
+    await expect(ring(page)).toHaveText('20%');
+    await expect(todo(page, 'Salle — Poussée A')).not.toHaveClass(/late/);
+    expect((await stored(page)).records[MONDAY].values).toEqual(original);
+    await expect(page.locator('#toast')).toContainText('meilleur score');
+    await expect(page.locator('#tracker tfoot td').first()).toContainText('20%');
+    await page.reload();
+    await expect(ring(page)).toHaveText('20%');
+    // Une correction volontaire reste possible en effaçant puis en revalidant.
+    await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=clear]').click();
+    await todo(page, 'Salle — Poussée A').locator('.minbtn').click();
+    await expect(ring(page)).toHaveText('5%');
+    await expect(todo(page, 'Salle — Poussée A')).toHaveClass(/late/);
+  });
+
   test('recliquer le niveau déjà validé après l’échéance ne change rien', async ({ page }) => {
     await open(page, at(MONDAY, '20:30'));
     await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]').click(); // Standard à l’heure
@@ -272,9 +293,10 @@ test.describe('Pénalité de retard', () => {
     await expect(mondayPct).toContainText('10%'); // 0,5 / 5
     const s = await stored(page);
     expect(Object.values(s.records[MONDAY].values)[0]).toMatchObject({ p: 1, late: true });
-    await cell.click(); // 2 appuis = minimum
-    await expect(mondayPct).toContainText('5%'); // 0,25 / 5
-    await cell.click(); // 3 appuis = effacé
+    await cell.click(); // tentative de Minimum : le meilleur score reste acquis
+    await expect(mondayPct).toContainText('10%');
+    await page.locator('#dayDate').fill(MONDAY);
+    await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=clear]').click();
     await expect(mondayPct).toContainText('0%');
   });
 
