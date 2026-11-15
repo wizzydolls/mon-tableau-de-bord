@@ -143,6 +143,30 @@ test.describe('Pénalité de retard', () => {
     await expect(todo(page, 'Salle — Poussée A')).toHaveClass(/late/);
   });
 
+  test('recliquer le niveau déjà validé après l’échéance ne change rien', async ({ page }) => {
+    await open(page, at(MONDAY, '20:30'));
+    await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]').click(); // Standard à l’heure
+    await expect(ring(page)).toHaveText('20%');
+    await page.clock.setFixedTime(at(MONDAY, '22:00'));
+    await page.reload();
+    await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]').click(); // reclic tardif
+    await expect(ring(page)).toHaveText('20%');
+    await expect(todo(page, 'Salle — Poussée A')).not.toHaveClass(/late/);
+    await expect(page.locator('#toast')).toContainText('Déjà validé');
+  });
+
+  test('import : une clé __proto__ dans une sauvegarde v2 est rejetée', async ({ page }) => {
+    await open(page, at(MONDAY, '20:30'));
+    const alerts = [];
+    page.on('dialog', (d) => { if (d.type() === 'alert') alerts.push(d.message()); d.accept(); });
+    const s = await stored(page);
+    const text = JSON.stringify(s).replace('"priorities":{}', '"priorities":{},"settings2":{"__proto__":{"polluted":true}}');
+    await page.locator('#importFile').setInputFiles({ name: 'proto.json', mimeType: 'application/json', buffer: Buffer.from(text) });
+    await expect.poll(() => alerts.length).toBe(1);
+    expect(alerts[0]).toContain('Import impossible');
+    expect(await page.evaluate(() => ({}).polluted)).toBeUndefined();
+  });
+
   test('bouton Annuler dans le toast après un décochage', async ({ page }) => {
     await open(page, at(MONDAY, '22:00'));
     await todo(page, 'Salle — Poussée A').locator('.checkbox').click();

@@ -1251,6 +1251,8 @@ const esc = (s) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
   );
 const clone = (x) => JSON.parse(JSON.stringify(x));
+// Clés jamais acceptées dans une sauvegarde (protection contre la pollution de prototype).
+const FORBIDDEN_KEYS = ['__proto__', 'constructor', 'prototype'];
 // Date locale au format YYYY-MM-DD (jamais UTC : la journée est celle de l’appareil).
 function dateKey(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1325,7 +1327,7 @@ function migrate(data) {
   if (!data || typeof data !== 'object' || data.version !== 1) return data;
   const d = clone(data);
   d.version = SCHEMA;
-  const safe = (k) => !['__proto__', 'constructor', 'prototype'].includes(k);
+  const safe = (k) => !FORBIDDEN_KEYS.includes(k);
   if (d.settings && typeof d.settings === 'object') {
     if (!('graceMinutes' in d.settings)) d.settings.graceMinutes = DEFAULT_GRACE;
     if (!('latePenalty' in d.settings)) d.settings.latePenalty = true;
@@ -1727,7 +1729,7 @@ function buttons(b, date, minimumFirst = false) {
   const bs = blocksFor(date),
     today = dateKey(),
     m = nowMinutes(),
-    expired = date < today || (date === today && m > deadline(b, bs));
+    expired = lateAt(date, b, bs);
   if (b.link) {
     const target = bs.find((x) => x.id === b.link && x.type === 'task');
     if (!target) return '<p class="hint">Tâche liée absente ce jour : modifiez le lien dans le planning.</p>';
@@ -2142,12 +2144,15 @@ function setScore(id, date, value, starter = false) {
   } else if (value === true) r.values[id] = true;
   else {
     const next = { p: value, late: lateAt(date, b, r.blocks), at: new Date().toISOString() };
+    // Recliquer le niveau déjà validé ne change rien (sinon un clic tardif écraserait une validation à l’heure).
     // Passer au niveau supérieur garde le meilleur des deux (ex. Minimum à l’heure = Standard en retard) ; le démarreur ne rétrograde jamais un Standard.
+    const same = prev && typeof prev === 'object' && prev.p === value;
     const keep =
       prev &&
       typeof prev === 'object' &&
-      ((starter && prev.p === 1) || (value === 1 && prev.p === 0.5 && pointsOf(next) <= pointsOf(prev)));
-    if (keep) msg = 'Ton Minimum à l’heure vaut autant : on le garde.';
+      (same || (starter && prev.p === 1) || (value === 1 && prev.p === 0.5 && pointsOf(next) <= pointsOf(prev)));
+    if (same) msg = 'Déjà validé : rien ne change. Pour recommencer, effacez d’abord.';
+    else if (keep) msg = 'Ton Minimum à l’heure vaut autant : on le garde.';
     else {
       r.values[id] = next;
       if (isLate(next)) msg = 'Fait quand même : 50 % gardés. Demain, à l’heure !';
@@ -2638,7 +2643,7 @@ function validate(data) {
   const walk = (x) => {
     if (!x || typeof x !== 'object') return;
     for (const k of Object.keys(x)) {
-      if (['__proto__', 'constructor', 'prototype'].includes(k)) fail();
+      if (FORBIDDEN_KEYS.includes(k)) fail();
       walk(x[k]);
     }
   };
