@@ -1220,6 +1220,19 @@ dialog,dialog::backdrop,.topbar{backdrop-filter:none;-webkit-backdrop-filter:non
 #plusPanel .tool-panel .card{border:0;padding:0;margin:0}.tool-panel>.panel-body{padding:14px}.tracker td .pct{max-width:100%;overflow-wrap:anywhere}.tracker .rowlabel .rl{white-space:normal}.day-column{min-width:0}
 
 @media(max-width:480px){.tool-panel>.panel-body{padding:10px 6px}.tracker th:first-child{width:24%}.tracker .pct{letter-spacing:-.5px}.tracker thead th{white-space:nowrap}}
+
+/* Calendrier : navigation visible, indépendante des scores du jour. */
+.browse-days{display:grid;grid-template-columns:44px 1fr 1fr 44px;gap:6px;margin-bottom:12px}
+.browse-days button{padding:8px 4px}
+.browse-weeks{display:grid;grid-template-columns:44px 1fr 44px;gap:8px;align-items:center;margin:16px 0 12px;text-align:center}
+.browse-weeks button,.calendar-nav button{padding:6px}
+.browse-weeks strong{font-size:16px;font-weight:500}
+#calendarPanel{margin:0}.calendar-body{padding:8px 4px 16px}.calendar-nav{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;gap:8px;margin-bottom:16px}
+.calendar-nav label,.calendar-nav input{width:100%;min-width:0}.calendar-nav input{padding:8px 4px}
+.calendar-grid,.calendar-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;text-align:center}
+.calendar-weekdays{color:var(--muted);margin-bottom:8px}.calendar-grid button{min-height:44px;padding:5px 0;border-color:transparent}
+.calendar-grid button[aria-current=date]{border-color:#a998ff}.calendar-grid button[aria-pressed=true]{background:#a998ff;color:#17131f}
+.week-strip .week-date{font-weight:700;font-size:18px}.day-expanded h3{font-size:22px;margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -1227,7 +1240,10 @@ dialog,dialog::backdrop,.topbar{backdrop-filter:none;-webkit-backdrop-filter:non
 <header class="topbar"><div class="brand"><span class="mark" aria-hidden="true">m.</span><strong>mon rythme</strong></div><button data-action="plus" aria-controls="plusPanel">Plus</button><span id="saveStatus" class="screenreader">Vos données, sur cet appareil</span></header>
 <div id="saveWarning" class="savewarning hidden" role="alert"></div>
 <main>
-<section class="week-top" aria-label="Les jours de la semaine"><div id="todayLabel" class="date-title"></div><div id="weekStrip" class="week-strip"></div><div id="weekDetail"></div></section>
+<section class="week-top" aria-label="Les jours de la semaine"><div id="todayLabel" class="date-title"></div><div class="browse-days"><button data-action="browsePrevDay" aria-label="Jour précédent">←</button><button data-action="browseToday" aria-label="Revenir à aujourd’hui">Aujourd’hui</button><button data-action="browseTomorrow">Demain</button><button data-action="browseNextDay" aria-label="Jour suivant">→</button></div>
+<details id="calendarPanel" class="panel"><summary>Calendrier · mois et année</summary><div class="calendar-body"><div class="calendar-nav"><button data-action="browsePrevMonth" aria-label="Mois précédent">←</button><label><span class="screenreader">Mois et année à consulter</span><input id="calendarMonth" type="month" min="1900-01" max="9998-12"></label><button data-action="browseNextMonth" aria-label="Mois suivant">→</button></div><div class="calendar-weekdays" aria-hidden="true"><span>Lu</span><span>Ma</span><span>Me</span><span>Je</span><span>Ve</span><span>Sa</span><span>Di</span></div><div id="calendarGrid" class="calendar-grid" aria-label="Jours du mois"></div></div></details>
+<div class="browse-weeks"><button data-action="browsePrevWeek" aria-label="Semaine précédente du calendrier">←</button><strong id="browseRange"></strong><button data-action="browseNextWeek" aria-label="Semaine suivante du calendrier">→</button></div>
+<div id="weekStrip" class="week-strip"></div><div id="weekDetail"></div></section>
 <section class="card hero" aria-labelledby="nowHeading"><div class="flex between"><h2 id="nowHeading">Maintenant</h2><span id="clock" class="time"></span></div><div id="now"></div></section>
 <section class="card" id="checklistCard" aria-labelledby="checklistHeading"><div id="checklist"></div></section>
 <section class="card" aria-labelledby="weekHomeHeading"><h2 id="weekHomeHeading">Ma semaine</h2><div id="weekHome"></div></section>
@@ -1818,13 +1834,48 @@ function renderNow() {
   renderWeekOverview();
 }
 let expandedDay = null;
+let browseDate = dateKey();
+let calendarMonth = browseDate.slice(0, 7);
 const expandedTasks = new Set();
+// Navigation de consultation uniquement : ne crée ni validation ni révision de planning.
+function browseTo(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < '1900-01-01' || date > '9998-12-31') return;
+  if (dateKey(parseDate(date)) !== date) return;
+  browseDate = date;
+  calendarMonth = date.slice(0, 7);
+  expandedDay = date;
+  renderWeekOverview();
+}
+function moveBrowseMonth(offset) {
+  const d = parseDate(calendarMonth + '-01');
+  d.setMonth(d.getMonth() + offset);
+  browseTo(dateKey(d));
+}
+function renderCalendar() {
+  const first = calendarMonth + '-01';
+  const next = parseDate(first);
+  next.setMonth(next.getMonth() + 1);
+  next.setDate(0);
+  const days = next.getDate();
+  $('calendarGrid').innerHTML = '<span aria-hidden="true"></span>'.repeat(weekday(first)) +
+    Array.from({length:days}, (_,i) => {
+      const date = calendarMonth + '-' + String(i+1).padStart(2,'0');
+      return `<button data-action="browseDate" data-date="${date}" aria-label="${fmt(date,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}" aria-pressed="${date===browseDate}" ${date===dateKey()?'aria-current="date"':''}>${i+1}</button>`;
+    }).join('');
+}
+$('calendarMonth').addEventListener('change', e => {
+  if (e.target.validity.valid && /^\d{4}-\d{2}$/.test(e.target.value)) browseTo(e.target.value + '-01');
+});
 function renderWeekOverview() {
-  const today = dateKey(), start = monday(today), dates = Array.from({length:7},(_,i)=>addDays(start,i));
-  $('weekStrip').innerHTML = dates.map((d,i)=>{const st=dayStats(d);return `<button data-action="expandDay" data-date="${d}" aria-expanded="${expandedDay===d}" class="${d===today?'today':''}" ${d===today?'aria-current="date"':''}><span>${DAYS[i].slice(0,3)}</span><strong style="color:${d>today?'var(--muted)':pctColor(st.pct)}">${d>today||!st.total?'—':st.pct+'%'}</strong></button>`}).join('');
-  $('weekDetail').innerHTML = expandedDay ? `<div class="day-expanded"><h3>${fmt(expandedDay,{weekday:'long',day:'numeric',month:'long'})}</h3>${blocksFor(expandedDay).filter(b=>b.type!=='marker').map(b=>blockHTML(b,expandedDay)).join('') || '<p>Aucune tâche prévue.</p>'}</div>` : '';
-  const ws=weekScore(start);
-  $('weekHome').innerHTML = `<p class="week-average">${percentage(ws)} % <span>sur les 7 jours</span></p><div class="week-bars">${dates.map((d,i)=>{const st=dayStats(d),future=d>today;return `<div><strong>${future||!st.total?'—':st.pct+'%'}</strong><div class="bar-track"><i style="height:${future?0:st.pct}%;background:${pctColor(st.pct)}"></i></div><span>${DAYS[i].slice(0,3)}</span></div>`}).join('')}</div><p class="streak">${streak()} jour${streak()>1?'s':''} de suite en mouvement</p>`;
+  const today = dateKey(), start = monday(browseDate), dates = Array.from({length:7},(_,i)=>addDays(start,i));
+  $('browseRange').textContent = fmt(start, {day:'numeric',month:'short'}) + ' → ' + fmt(addDays(start,6), {day:'numeric',month:'long',year:'numeric'});
+  $('calendarMonth').value = calendarMonth;
+  renderCalendar();
+  $('weekStrip').innerHTML = dates.map((d,i)=>{const st=dayStats(d);return `<button data-action="expandDay" data-date="${d}" aria-expanded="${expandedDay===d}" class="${d===today?'today':''}" ${d===today?'aria-current="date"':''}><span>${DAYS[i].slice(0,3)}</span><span class="week-date">${parseDate(d).getDate()}</span><strong style="color:${d>today?'var(--muted)':pctColor(st.pct)}">${d>today||!st.total?'—':st.pct+'%'}</strong></button>`}).join('');
+  $('weekDetail').innerHTML = expandedDay ? `<div class="day-expanded"><h3>${fmt(expandedDay,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</h3>${expandedDay>today?'<p class="hint">Planning prévu · les validations seront possibles ce jour-là.</p>':''}${blocksFor(expandedDay).filter(b=>b.type!=='marker').map(b=>blockHTML(b,expandedDay)).join('') || '<p>Aucune tâche prévue.</p>'}</div>` : '';
+  const currentStart = monday(today), currentDates = Array.from({length:7},(_,i)=>addDays(currentStart,i));
+  const ws=weekScore(currentStart);
+  $('weekHome').innerHTML = `<p class="week-average">${percentage(ws)} % <span>sur les 7 jours</span></p><div class="week-bars">${currentDates.map((d,i)=>{const st=dayStats(d),future=d>today;return `<div><strong>${future||!st.total?'—':st.pct+'%'}</strong><div class="bar-track"><i style="height:${future?0:st.pct}%;background:${pctColor(st.pct)}"></i></div><span>${DAYS[i].slice(0,3)}</span></div>`}).join('')}</div><p class="streak">${streak()} jour${streak()>1?'s':''} de suite en mouvement</p>`;
 }
 function renderDay() {
   const s = dayScore(selectedDate);
@@ -2331,7 +2382,19 @@ document.addEventListener('click', (e) => {
     $(a === 'planning' ? 'schedulePanel' : 'plusPanel').scrollIntoView({behavior:'smooth',block:'start'});
     return;
   }
-  if (a === 'expandDay') { expandedDay = expandedDay === el.dataset.date ? null : el.dataset.date; renderWeekOverview(); return; }
+  if (a === 'browseDate') { browseTo(el.dataset.date); return; }
+  if (a === 'browseToday' || a === 'browseTomorrow') { browseTo(addDays(dateKey(), a === 'browseTomorrow' ? 1 : 0)); return; }
+  if (['browsePrevDay','browseNextDay','browsePrevWeek','browseNextWeek'].includes(a)) {
+    const steps = {browsePrevDay:-1,browseNextDay:1,browsePrevWeek:-7,browseNextWeek:7};
+    browseTo(addDays(browseDate,steps[a])); return;
+  }
+  if (a === 'browsePrevMonth' || a === 'browseNextMonth') { moveBrowseMonth(a === 'browsePrevMonth' ? -1 : 1); return; }
+  if (a === 'expandDay') {
+    const close = expandedDay === el.dataset.date;
+    browseTo(el.dataset.date);
+    if (close) { expandedDay = null; renderWeekOverview(); }
+    return;
+  }
   if (a === 'toggle' || a === 'half' || a === 'cycle') {
     const d = el.dataset.date,
       cur = levelOf(values(d)[id]);
@@ -2710,6 +2773,7 @@ if (!storageBlocked) save();
 setInterval(() => {
   const today = dateKey();
   if (today !== lastDay) {
+    if (browseDate === lastDay) { browseDate = today; calendarMonth = today.slice(0,7); if (expandedDay === lastDay) expandedDay = today; }
     if (selectedDate === lastDay) selectedDate = today;
     if (trackerWeek === monday(lastDay)) trackerWeek = monday(today);
     selectedDay = weekday(today);

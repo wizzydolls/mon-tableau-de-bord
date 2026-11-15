@@ -1,6 +1,8 @@
 // Configuration Playwright. La page est servie par tests/serve.js (Node seul, aucune dépendance).
 const { defineConfig, devices } = require('@playwright/test');
 
+const port = Number(process.env.PORT) || 4173;
+
 module.exports = defineConfig({
   testDir: './tests',
   timeout: 30000,
@@ -8,7 +10,7 @@ module.exports = defineConfig({
   retries: 0,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: `http://127.0.0.1:${port}`,
     locale: 'fr-FR',
     timezoneId: 'Europe/Paris',
     ...devices['Desktop Chrome'],
@@ -16,7 +18,7 @@ module.exports = defineConfig({
   },
   webServer: {
     command: 'node tests/serve.js',
-    port: 4173,
+    port,
     reuseExistingServer: true,
     timeout: 10000,
   },
