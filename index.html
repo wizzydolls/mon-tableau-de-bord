@@ -1709,15 +1709,19 @@ function actionAt(date, minute) {
     overdue.length &&
     !(main && (main.link || (main.type === 'task' && mins(main.start) <= minute) || main.cat === 'work'))
   ) {
-    main = overdue[0];
+    // D’abord la tâche encore rattrapable à 100 % dont l’échéance est la plus proche, sinon la plus ancienne.
+    const soon = overdue.filter((b) => deadline(b, bs) >= minute).sort((a, b) => deadline(a, bs) - deadline(b, bs));
+    main = soon[0] || overdue[0];
     catchup = true;
   }
+  const late = !!(main && catchup && state.settings.latePenalty && minute > deadline(main, bs));
   return {
     main,
     catchup,
     next: upcoming.filter((b) => b.id !== main?.id).slice(0, 2),
     overdue,
-    late: !!(main && catchup && state.settings.latePenalty && minute > deadline(main, bs))
+    late,
+    left: main && catchup && !late ? deadline(main, bs) - minute : null
   };
 }
 
@@ -1794,7 +1798,7 @@ function renderNow() {
   $('now').innerHTML =
     departure(today, m) +
     (a.main
-      ? `<p style="margin-top:15px"><span class="tag">${a.catchup ? (a.late ? 'À rattraper · vaut 50 %' : 'À rattraper · le minimum suffit') : mins(a.main.start) > m ? 'À venir · ' + a.main.start : 'Votre prochain petit pas'}</span></p><h2>${esc(a.main.title)}</h2>${a.catchup ? '<p class="muted">Une petite version vaut déjà un pas en avant.</p>' : ''}${exercises(a.main)}${buttons(a.main, today, a.catchup)}`
+      ? `<p style="margin-top:15px"><span class="tag">${a.catchup ? (a.late ? 'À rattraper · vaut 50 %' : a.left !== null && a.left < 15 && state.settings.latePenalty ? `À rattraper · plus que ${Math.max(a.left, 1)} min pour 100 %` : 'À rattraper · le minimum suffit') : mins(a.main.start) > m ? 'À venir · ' + a.main.start : 'Votre prochain petit pas'}</span></p><h2>${esc(a.main.title)}</h2>${a.catchup ? '<p class="muted">Une petite version vaut déjà un pas en avant.</p>' : ''}${exercises(a.main)}${buttons(a.main, today, a.catchup)}`
       : '<h2>La journée est terminée.</h2><p class="muted">Vous pouvez souffler. Demain est une nouvelle occasion.</p>') +
     `<div class="next"><div class="eyebrow">Ensuite</div>${a.next.length ? a.next.map((b) => `<p><span class="time">${b.start}</span> &nbsp; ${esc(b.title)}</p>`).join('') : '<p>Plus de bloc prévu aujourd’hui.</p>'}</div>`;
 }
@@ -2152,7 +2156,7 @@ function setScore(id, date, value, starter = false) {
       typeof prev === 'object' &&
       (same || (starter && prev.p === 1) || (value === 1 && prev.p === 0.5 && pointsOf(next) <= pointsOf(prev)));
     if (same) msg = 'Déjà validé : rien ne change. Pour recommencer, effacez d’abord.';
-    else if (keep) msg = 'Ton Minimum à l’heure vaut autant : on le garde.';
+    else if (keep) msg = starter ? 'Déjà en Standard : on le garde.' : 'Ton Minimum à l’heure vaut autant : on le garde.';
     else {
       r.values[id] = next;
       if (isLate(next)) msg = 'Fait quand même : 50 % gardés. Demain, à l’heure !';
@@ -2161,11 +2165,12 @@ function setScore(id, date, value, starter = false) {
   save();
   render();
   const after = dayStats(date);
+  const lateNote = msg.startsWith('Fait quand même') ? ' Celle-ci en retard : 50 % gardés.' : '';
   toast(
     after.total && after.pct >= 100 && before.pct < 100
       ? '100 % ! Journée complète.'
       : after.total && after.checked === after.total && before.checked < before.total
-        ? 'Tout est coché. Journée sauvée.'
+        ? 'Tout est coché. Journée sauvée.' + lateNote
         : msg || (value === 0.5 ? 'Le minimum compte. Un pas de plus.' : 'C’est enregistré.'),
     value === null
   );

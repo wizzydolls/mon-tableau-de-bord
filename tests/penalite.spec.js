@@ -85,6 +85,20 @@ test.describe('Pénalité de retard', () => {
     await expect(page.locator('.perfect-banner')).toHaveCount(0);
   });
 
+  test('100 % : toutes les tâches en Standard et à l’heure → bannière verte', async ({ page }) => {
+    await open(page, at(MONDAY, '07:00'));
+    for (const t of ['Réveil', 'Lecture', 'Podcast', 'Salle — Poussée A', 'Anglais oral']) await todo(page, t).locator('.checkbox').click();
+    await expect(ring(page)).toHaveText('100%');
+    await expect(page.locator('.perfect-banner')).toBeVisible();
+    await expect(page.locator('#toast')).toContainText('100 %');
+  });
+
+  test('carte Maintenant : met en avant la tâche dont l’échéance approche', async ({ page }) => {
+    await open(page, at(MONDAY, '21:35')); // Salle finie à 21:15, échéance 21:45 ; Réveil, Lecture, Podcast déjà en retard
+    await expect(page.locator('#now h2')).toHaveText('Salle — Poussée A');
+    await expect(page.locator('#now .tag')).toContainText('plus que 10 min pour 100 %');
+  });
+
   test('affichage : échéance, compte à rebours, badge En retard', async ({ page }) => {
     await open(page, at(MONDAY, '20:30'));
     await expect(todo(page, 'Salle — Poussée A')).toContainText('à valider avant 21:45');
