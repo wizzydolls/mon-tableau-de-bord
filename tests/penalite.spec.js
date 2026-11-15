@@ -354,6 +354,43 @@ test.describe('Pénalité de retard', () => {
     await expect.poll(() => alerts.length).toBe(2);
   });
 
+  for (const [level, points, percentage] of [['Standard', 1, '20%'], ['Minimum', 0.5, '10%']]) {
+    test(`marge après minuit : ${level} sans pénalité à 00:10 et 00:45, pénalisé à 00:46`, async ({ page }) => {
+      await open(page, at(MONDAY, '22:00'));
+      await page.locator('[data-action=settings]').first().click();
+      await page.locator('#graceInput').fill('120');
+      await page.locator('#settingsForm button[type=submit]').click();
+      await page.clock.setFixedTime(at('2026-11-17', '00:10'));
+      await page.reload();
+      await page.locator('#dayDate').fill(MONDAY);
+      const block = timelineBlock(page, 'Anglais oral');
+      const button = block.locator(`[data-action=score][data-value="${points}"]`);
+      const mondayPct = page.locator('#tracker tfoot td').first();
+      await button.click();
+      await expect(mondayPct).toContainText(percentage);
+      let value = Object.values((await stored(page)).records[MONDAY].values)[0];
+      expect(value).toMatchObject({ p: points, late: false });
+      await block.locator('[data-action=clear]').click();
+      await page.clock.setFixedTime(at('2026-11-17', '00:45'));
+      await button.click();
+      await expect(mondayPct).toContainText(percentage);
+      await block.locator('[data-action=clear]').click();
+      await page.clock.setFixedTime(at('2026-11-17', '00:46'));
+      await button.click();
+      value = Object.values((await stored(page)).records[MONDAY].values)[0];
+      expect(value).toMatchObject({ p: points, late: true });
+      await expect(mondayPct).toContainText(points === 1 ? '10%' : '5%');
+    });
+  }
+
+  test('échéance après minuit : affiche 00:45 le lendemain', async ({ page }) => {
+    await open(page, at(MONDAY, '22:00'));
+    await page.locator('[data-action=settings]').first().click();
+    await page.locator('#graceInput').fill('120');
+    await page.locator('#settingsForm button[type=submit]').click();
+    await expect(todo(page, 'Anglais oral')).toContainText('à valider avant 00:45 (lendemain)');
+  });
+
   test('375 px : pas de défilement horizontal, zones de toucher ≥ 44 px', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await open(page, at(MONDAY, '22:00'));

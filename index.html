@@ -1303,15 +1303,16 @@ const isLate = (v) => !!(v && typeof v === 'object' && v.late && !v.penaltyExemp
 const pointsOf = (v) => levelOf(v) * (isLate(v) ? PENALTY : 1);
 const nowMinutes = (d = new Date()) => d.getHours() * 60 + d.getMinutes();
 const fmtMin = (m) =>
-  m >= 1440 ? 'minuit' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  `${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}${m >= 1440 ? ' (lendemain)' : ''}`;
 // Échéance d’un bloc, en minutes : fin du bloc + marge de tolérance (Réglages).
 function deadline(b, bs) {
   return blockEnd(b, bs) + state.settings.graceMinutes;
 }
-// Une validation est en retard si le jour est passé, ou si l’heure courante dépasse l’échéance.
+// Compare les minutes locales depuis le jour du bloc : la marge peut déborder après minuit.
 function lateAt(date, b, bs, when = new Date()) {
   const today = dateKey(when);
-  return date < today || (date === today && nowMinutes(when) > deadline(b, bs));
+  const elapsed = (dayNumber(today) - dayNumber(date)) * 1440 + nowMinutes(when);
+  return elapsed > deadline(b, bs);
 }
 // Texte d’échéance pour une tâche non validée aujourd’hui : « à valider avant », compte à rebours, ou badge En retard.
 function dueText(b, bs, m) {
