@@ -7,3 +7,4 @@ mon-rythme-*.json
 node_modules/
 test-results/
 playwright-report/
+captures/
