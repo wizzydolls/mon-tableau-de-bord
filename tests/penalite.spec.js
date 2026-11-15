@@ -15,8 +15,19 @@ async function open(page, time, state) {
   if (state) await page.addInitScript(([k, s]) => localStorage.setItem(k, s), [KEY, JSON.stringify(state)]);
   await page.goto('/');
   await expect(page.locator('#checklist .ring span')).toBeVisible();
+  await openTools(page);
 }
 
+async function openTools(page) {
+  await page.locator('header [data-action=plus]').click();
+  for (const summary of await page.locator('.tool-panel > summary').all()) await summary.click();
+  if (await page.locator('#hideMarkersBtn').getAttribute('aria-pressed') === 'true') await page.locator('#hideMarkersBtn').click();
+}
+async function shortVersion(page, title) {
+ const row=todo(page,title);
+ if (!(await row.locator('details').getAttribute('open')) && await row.locator('details').getAttribute('open') !== '') await row.locator('summary').click();
+ await row.locator('.minbtn').click();
+}
 const stored = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), KEY);
 const ring = (page) => page.locator('#checklist .ring span');
 const todo = (page, title) => page.locator('.todo', { hasText: title });
@@ -48,7 +59,7 @@ test.describe('Pénalité de retard', () => {
     await expect(ring(page)).toHaveText('0%');
     await todo(page, 'Salle — Poussée A').locator('.checkbox').click();
     await expect(ring(page)).toHaveText('20%'); // 1 / 5 tâches
-    await todo(page, 'Anglais oral').locator('.minbtn').click(); // avant le début du bloc : à l’heure
+    await shortVersion(page, 'Anglais oral'); // avant le début du bloc : à l’heure
     await expect(ring(page)).toHaveText('30%'); // 1,5 / 5
     await expect(todo(page, 'Salle — Poussée A')).not.toHaveClass(/late/);
     const s = await stored(page);
@@ -67,7 +78,7 @@ test.describe('Pénalité de retard', () => {
     await expect(todo(page, 'Salle — Poussée A').locator('.late-mark')).toBeVisible();
     await expect(page.locator('#toast')).toContainText('50 %');
     await expect(page.locator('#toast')).not.toContainText('culpab');
-    await todo(page, 'Podcast').locator('.minbtn').click(); // Podcast finit 17:40 → en retard aussi
+    await shortVersion(page, 'Podcast'); // Podcast finit 17:40 → en retard aussi
     await expect(ring(page)).toHaveText('15%'); // 0,5 + 0,25 = 0,75 / 5
     // La frise affiche la vraie valeur du bouton.
     await expect(timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]')).toContainText('0,5');
@@ -95,8 +106,8 @@ test.describe('Pénalité de retard', () => {
 
   test('carte Maintenant : met en avant la tâche dont l’échéance approche', async ({ page }) => {
     await open(page, at(MONDAY, '21:35')); // Salle finie à 21:15, échéance 21:45 ; Réveil, Lecture, Podcast déjà en retard
-    await expect(page.locator('#now h2')).toHaveText('Salle — Poussée A');
-    await expect(page.locator('#now .tag')).toContainText('plus que 10 min pour 100 %');
+    await expect(page.locator('#now h3')).toHaveText('Salle — Poussée A');
+    await expect(page.locator('#now .due-soon')).toContainText('plus que 10 min');
   });
 
   test('affichage : échéance, compte à rebours, badge En retard', async ({ page }) => {
@@ -105,13 +116,13 @@ test.describe('Pénalité de retard', () => {
     await expect(todo(page, 'Anglais oral')).toContainText('à valider avant 23:15'); // 22:15–22:45 + 30 min
     await expect(todo(page, 'Lecture')).toContainText('En retard · vaut 50 %');
     await page.clock.setFixedTime(at(MONDAY, '21:35'));
-    await page.reload();
+    await page.reload(); await openTools(page);
     await expect(todo(page, 'Salle — Poussée A')).toContainText('plus que 10 min');
     await page.clock.setFixedTime(at(MONDAY, '21:50'));
-    await page.reload();
+    await page.reload(); await openTools(page);
     await expect(todo(page, 'Salle — Poussée A')).toContainText('En retard · vaut 50 %');
     // La carte « Maintenant » signale la valeur de la tâche à rattraper.
-    await expect(page.locator('#now')).toContainText('vaut 50 %');
+    await expect(todo(page, 'Salle — Poussée A')).toContainText('vaut 50 %');
   });
 
   test('marge réglable dans Réglages (0–120 min)', async ({ page }) => {
@@ -147,11 +158,11 @@ test.describe('Pénalité de retard', () => {
     await page.locator('#penaltyInput').uncheck();
     await page.locator('#settingsForm button[type=submit]').click();
     await todo(page, 'Salle — Poussée A').locator('.checkbox').click();
-    await todo(page, 'Podcast').locator('.minbtn').click();
+    await shortVersion(page, 'Podcast');
     await expect(ring(page)).toHaveText('30%');
 
     await page.clock.setFixedTime(at('2026-11-17', '10:00'));
-    await page.reload();
+    await page.reload(); await openTools(page);
     await page.locator('[data-action=settings]').first().click();
     await page.locator('#penaltyInput').check();
     await page.locator('#settingsForm button[type=submit]').click();
@@ -163,7 +174,7 @@ test.describe('Pénalité de retard', () => {
     expect(Object.values(saved.records[MONDAY].values).every((v) => v.penaltyExempt === true)).toBe(true);
 
     // L’exemption survit au rechargement et à un export/import.
-    await page.reload();
+    await page.reload(); await openTools(page);
     await expect(mondayPct).toContainText('30%');
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('footer [data-action=export]').click()]);
     const backup = fs.readFileSync(await download.path());
@@ -199,14 +210,14 @@ test.describe('Pénalité de retard', () => {
 
   test('changer de niveau garde le meilleur des deux ; décocher puis recocher = nouvelle validation', async ({ page }) => {
     await open(page, at(MONDAY, '20:30'));
-    await todo(page, 'Salle — Poussée A').locator('.minbtn').click(); // Minimum à l’heure = 0,5
+    await shortVersion(page, 'Salle — Poussée A'); // Minimum à l’heure = 0,5
     await expect(ring(page)).toHaveText('10%');
     await page.clock.setFixedTime(at(MONDAY, '22:00'));
-    await page.reload();
+    await page.reload(); await openTools(page);
     await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]').click(); // Standard en retard = 0,5
     await expect(ring(page)).toHaveText('10%');
     await expect(todo(page, 'Salle — Poussée A')).not.toHaveClass(/late/); // on garde le Minimum à l’heure
-    await todo(page, 'Salle — Poussée A').locator('.minbtn').click(); // décoche
+    await shortVersion(page, 'Salle — Poussée A'); // décoche
     await expect(ring(page)).toHaveText('0%');
     await todo(page, 'Salle — Poussée A').locator('.checkbox').click(); // nouvelle validation, en retard
     await expect(ring(page)).toHaveText('10%');
@@ -218,18 +229,18 @@ test.describe('Pénalité de retard', () => {
     await todo(page, 'Salle — Poussée A').locator('.checkbox').click();
     const original = (await stored(page)).records[MONDAY].values;
     await page.clock.setFixedTime(at(MONDAY, '22:00'));
-    await page.reload();
-    await todo(page, 'Salle — Poussée A').locator('.minbtn').click();
+    await page.reload(); await openTools(page);
+    await shortVersion(page, 'Salle — Poussée A');
     await expect(ring(page)).toHaveText('20%');
     await expect(todo(page, 'Salle — Poussée A')).not.toHaveClass(/late/);
     expect((await stored(page)).records[MONDAY].values).toEqual(original);
     await expect(page.locator('#toast')).toContainText('meilleur score');
     await expect(page.locator('#tracker tfoot td').first()).toContainText('20%');
-    await page.reload();
+    await page.reload(); await openTools(page);
     await expect(ring(page)).toHaveText('20%');
     // Une correction volontaire reste possible en effaçant puis en revalidant.
     await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=clear]').click();
-    await todo(page, 'Salle — Poussée A').locator('.minbtn').click();
+    await shortVersion(page, 'Salle — Poussée A');
     await expect(ring(page)).toHaveText('5%');
     await expect(todo(page, 'Salle — Poussée A')).toHaveClass(/late/);
   });
@@ -239,7 +250,7 @@ test.describe('Pénalité de retard', () => {
     await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]').click(); // Standard à l’heure
     await expect(ring(page)).toHaveText('20%');
     await page.clock.setFixedTime(at(MONDAY, '22:00'));
-    await page.reload();
+    await page.reload(); await openTools(page);
     await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]').click(); // reclic tardif
     await expect(ring(page)).toHaveText('20%');
     await expect(todo(page, 'Salle — Poussée A')).not.toHaveClass(/late/);
@@ -278,7 +289,7 @@ test.describe('Pénalité de retard', () => {
     await expect(todo(page, 'Anglais oral')).not.toHaveClass(/late/);
     await page.clock.setFixedTime(at(MONDAY, '19:00'));
     await page.addInitScript((k) => localStorage.removeItem(k), KEY);
-    await page.reload(); // 18:55 dépassé : plus de bouton de démarreur nulle part
+    await page.reload(); await openTools(page); // 18:55 dépassé : plus de bouton de démarreur nulle part
     await expect(page.locator('[data-action=starter]')).toHaveCount(0);
     await expect(timelineBlock(page, 'Démarreur')).toContainText('passé');
   });
@@ -303,12 +314,12 @@ test.describe('Pénalité de retard', () => {
   test('migration automatique v1 → v2 sans perte', async ({ page }) => {
     await open(page, at(MONDAY, '08:00')); // Réveil (échéance 08:05) et Lecture (08:50) encore à l’heure
     await todo(page, 'Réveil').locator('.checkbox').click();
-    await todo(page, 'Lecture').locator('.minbtn').click();
+    await shortVersion(page, 'Lecture');
     await expect(ring(page)).toHaveText('30%');
     const v1 = toV1(await stored(page));
     expect(v1.version).toBe(1);
     await page.evaluate(([k, s]) => localStorage.setItem(k, s), [KEY, JSON.stringify(v1)]);
-    await page.reload();
+    await page.reload(); await openTools(page);
     await expect(ring(page)).toHaveText('30%');
     const s = await stored(page);
     expect(s.version).toBe(2);
@@ -361,7 +372,7 @@ test.describe('Pénalité de retard', () => {
       await page.locator('#graceInput').fill('120');
       await page.locator('#settingsForm button[type=submit]').click();
       await page.clock.setFixedTime(at('2026-11-17', '00:10'));
-      await page.reload();
+      await page.reload(); await openTools(page);
       await page.locator('#dayDate').fill(MONDAY);
       const block = timelineBlock(page, 'Anglais oral');
       const button = block.locator(`[data-action=score][data-value="${points}"]`);
@@ -397,7 +408,7 @@ test.describe('Pénalité de retard', () => {
     await todo(page, 'Salle — Poussée A').locator('.checkbox').click();
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(375);
-    for (const sel of ['.todo .checkbox', '.todo .minbtn', '.tracker-nav button', '#now .buttons button']) {
+    for (const sel of ['.todo .checkbox', '.todo details[open] .minbtn', '.tracker-nav button', '#now .buttons button']) {
       const boxes = await page.locator(sel).evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
       for (const h of boxes) expect(h, sel).toBeGreaterThanOrEqual(44);
     }
