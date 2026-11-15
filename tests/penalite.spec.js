@@ -141,6 +141,62 @@ test.describe('Pénalité de retard', () => {
     expect((await stored(page)).settings.latePenalty).toBe(false);
   });
 
+  test('jour sans pénalité : Standard et Minimum gardent leurs points après réactivation le lendemain', async ({ page }) => {
+    await open(page, at(MONDAY, '22:00'));
+    await page.locator('[data-action=settings]').first().click();
+    await page.locator('#penaltyInput').uncheck();
+    await page.locator('#settingsForm button[type=submit]').click();
+    await todo(page, 'Salle — Poussée A').locator('.checkbox').click();
+    await todo(page, 'Podcast').locator('.minbtn').click();
+    await expect(ring(page)).toHaveText('30%');
+
+    await page.clock.setFixedTime(at('2026-11-17', '10:00'));
+    await page.reload();
+    await page.locator('[data-action=settings]').first().click();
+    await page.locator('#penaltyInput').check();
+    await page.locator('#settingsForm button[type=submit]').click();
+    const mondayPct = page.locator('#tracker tfoot td').first();
+    await expect(mondayPct).toContainText('30%');
+    await expect(page.locator('#tracker button[aria-label^="Salle, Lundi"]')).not.toHaveClass(/late/);
+    await expect(page.locator('#tracker button[aria-label^="Podcast, Lundi"]')).not.toHaveClass(/late/);
+    const saved = await stored(page);
+    expect(Object.values(saved.records[MONDAY].values).every((v) => v.penaltyExempt === true)).toBe(true);
+
+    // L’exemption survit au rechargement et à un export/import.
+    await page.reload();
+    await expect(mondayPct).toContainText('30%');
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('footer [data-action=export]').click()]);
+    const backup = fs.readFileSync(await download.path());
+    page.on('dialog', (d) => d.accept());
+    await page.locator('#importFile').setInputFiles({ name: 'jour-sans-penalite.json', mimeType: 'application/json', buffer: backup });
+    await expect(page.locator('#toast')).toContainText('importée');
+    await expect(mondayPct).toContainText('30%');
+
+    // Une nouvelle validation, après effacement, reprend la règle courante.
+    await page.locator('#dayDate').fill(MONDAY);
+    await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=clear]').click();
+    await page.locator('#toast [data-action=undo]').click();
+    await expect(mondayPct).toContainText('30%');
+    await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=clear]').click();
+    await timelineBlock(page, 'Salle — Poussée A').locator('[data-action=score][data-value="1"]').click();
+    await expect(mondayPct).toContainText('20%'); // Standard tardif 0,5 + Minimum exempté 0,5
+  });
+
+  test('import : exemption de pénalité strictement booléenne, sans champ inconnu', async ({ page }) => {
+    await open(page, at(MONDAY, '22:00'));
+    await todo(page, 'Salle — Poussée A').locator('.checkbox').click();
+    const saved = await stored(page), alerts = [];
+    page.on('dialog', (d) => { if (d.type() === 'alert') alerts.push(d.message()); d.accept(); });
+    for (const fields of [{ penaltyExempt: 'true' }, { penaltyExempt: true, unknown: 1 }]) {
+      const bad = JSON.parse(JSON.stringify(saved));
+      Object.assign(Object.values(bad.records[MONDAY].values)[0], fields);
+      await page.locator('#importFile').setInputFiles({ name: 'invalide.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(bad)) });
+    }
+    await expect.poll(() => alerts.length).toBe(2);
+    expect(alerts.every((s) => s.includes('Import impossible'))).toBe(true);
+    await expect(ring(page)).toHaveText('10%');
+  });
+
   test('changer de niveau garde le meilleur des deux ; décocher puis recocher = nouvelle validation', async ({ page }) => {
     await open(page, at(MONDAY, '20:30'));
     await todo(page, 'Salle — Poussée A').locator('.minbtn').click(); // Minimum à l’heure = 0,5

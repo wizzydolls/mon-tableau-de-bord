@@ -1297,8 +1297,8 @@ const SCHEMA = 2,
   PENALTY = 0.5;
 // Niveau validé d’une tâche : 1 (Standard), 0,5 (Minimum) ou 0 (rien). Un bonus (true) vaut 0.
 const levelOf = (v) => (v && typeof v === 'object' ? v.p : 0);
-// Vrai si la validation a été faite en retard ET que la pénalité est activée dans les Réglages.
-const isLate = (v) => !!(v && typeof v === 'object' && v.late && state.settings.latePenalty);
+// Une validation faite sans pénalité reste exemptée, même après réactivation du réglage.
+const isLate = (v) => !!(v && typeof v === 'object' && v.late && !v.penaltyExempt && state.settings.latePenalty);
 // Le seul calcul de points de toute la page : niveau × 0,5 si en retard (pénalité active).
 const pointsOf = (v) => levelOf(v) * (isLate(v) ? PENALTY : 1);
 const nowMinutes = (d = new Date()) => d.getHours() * 60 + d.getMinutes();
@@ -2148,6 +2148,7 @@ function setScore(id, date, value, starter = false) {
   } else if (value === true) r.values[id] = true;
   else {
     const next = { p: value, late: lateAt(date, b, r.blocks), at: new Date().toISOString() };
+    if (!state.settings.latePenalty) next.penaltyExempt = true;
     // Recliquer le niveau déjà validé ne change rien (sinon un clic tardif écraserait une validation à l’heure).
     // Passer au niveau supérieur garde le meilleur des deux (ex. Minimum à l’heure = Standard en retard) ; le démarreur ne rétrograde jamais un Standard.
     const same = prev && typeof prev === 'object' && prev.p === value;
@@ -2614,7 +2615,8 @@ function validate(data) {
     for (const [id, v] of Object.entries(r.values)) {
       const task =
         obj(v) &&
-        Object.keys(v).length === 3 &&
+        Object.keys(v).every((key) => ['p', 'late', 'at', 'penaltyExempt'].includes(key)) &&
+        (!Object.hasOwn(v, 'penaltyExempt') || typeof v.penaltyExempt === 'boolean') &&
         [1, 0.5].includes(v.p) &&
         typeof v.late === 'boolean' &&
         (v.at === null || (str(v.at, 40) && Number.isFinite(Date.parse(v.at))));
